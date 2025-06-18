@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Tic Tac Toe</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      padding: 20px;
+      margin: 0;
+      background-color: #f4f4f4;
+    }
+    #board {
+      display: none;
+      grid-template-columns: repeat(3, minmax(80px, 1fr));
+      gap: 10px;
+      justify-content: center;
+      margin: 20px auto;
+      max-width: 300px;
+    }
+    .cell {
+      width: 100%;
+      height: 80px;
+      background-color: white;
+      border: 2px solid #ccc;
+      font-size: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background 0.3s ease;
+    }
+    .cell:hover { background-color: #f0f0f0; }
+    #rematchBtn {
+      display: none;
+      margin-top: 15px;
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    input[type="text"] {
+      padding: 10px;
+      font-size: 16px;
+      width: 80%;
+      max-width: 300px;
+      margin-bottom: 10px;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    @media (min-width: 600px) {
+      .cell {
+        height: 100px;
+        font-size: 48px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>🎮 Tic Tac Toe</h1>
+
+  <div id="game-container">
+    <input type="text" id="roomID" placeholder="Enter Room ID or Create One" required />
+    <button onclick="joinRoom()">Join Room</button>
+
+    <div id="board"></div>
+    <p id="status">Waiting for opponent...</p>
+    <button id="rematchBtn" onclick="rematch()">Rematch</button>
+  </div>
+
+  <!-- Socket.IO CDN -->
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script> 
+  <script>
+    const socket = io(); // Connects to same domain (Heroku)
+
+    let currentRoom = '';
+    let playerSymbol = 'X';
+    let boardState = Array(9).fill('');
+    let gameOver = false;
+
+    const board = document.getElementById('board');
+    const statusText = document.getElementById('status');
+    const rematchBtn = document.getElementById('rematchBtn');
+
+    function joinRoom() {
+      const roomInput = document.getElementById('roomID');
+      currentRoom = roomInput.value.trim();
+      socket.emit('joinRoom', currentRoom);
+      roomInput.disabled = true;
+      setupBoard();
+    }
+
+    function setupBoard() {
+      board.innerHTML = '';
+      board.style.display = 'grid';
+      statusText.innerText = 'Waiting for opponent...';
+      rematchBtn.style.display = 'none';
+
+      boardState = Array(9).fill('');
+      gameOver = false;
+
+      for (let i = 0; i < 9; i++) {
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        cell.dataset.index = i;
+        cell.addEventListener('click', handleCellClick);
+        board.appendChild(cell);
+      }
+    }
+
+    function handleCellClick(e) {
+      if (gameOver) return;
+
+      const cell = e.target;
+      const index = cell.dataset.index;
+
+      if (boardState[index] !== '') return;
+
+      boardState[index] = playerSymbol;
+      cell.innerText = playerSymbol;
+
+      socket.emit('movePlayed', { room: currentRoom, index, symbol: playerSymbol });
+
+      if (checkWinner(boardState, playerSymbol)) {
+        endGame(playerSymbol);
+      } else if (boardState.every(cell => cell !== '')) {
+        endGame('draw');
+      }
+    }
+
+    socket.on('startGame', () => {
+      playerSymbol = 'X';
+      statusText.innerText = "You are X. Your turn!";
+    });
+
+    socket.on('opponentMove', (data) => {
+      const cell = document.querySelector(`[data-index='${data.index}']`);
+      if (!cell.innerText) {
+        boardState[data.index] = data.symbol;
+        cell.innerText = data.symbol;
+
+        if (checkWinner(boardState, data.symbol)) {
+          endGame(data.symbol);
+        } else if (boardState.every(cell => cell !== '')) {
+          endGame('draw');
+        } else {
+          statusText.innerText = "Your turn!";
+        }
+      }
+    });
+
+    socket.on('resetGame', () => {
+      setupBoard();
+    });
+
+    function checkWinner(bd, sym) {
+      const wins = [
+        [0,1,2],[3,4,5],[6,7,8],
+        [0,3,6],[1,4,7],[2,5,8],
+        [0,4,8],[2,4,6]
+      ];
+      return wins.some(combo => combo.every(i => bd[i] === sym));
+    }
+
+    function endGame(winner) {
+      gameOver = true;
+      if (winner === 'draw') {
+        statusText.innerText = "It's a draw!";
+      } else {
+        statusText.innerText = `${winner} wins!`;
+      }
+      rematchBtn.style.display = 'inline-block';
+    }
+
+    function rematch() {
+      socket.emit('rematch', currentRoom);
+    }
+  </script>
+</body>
+</html>
